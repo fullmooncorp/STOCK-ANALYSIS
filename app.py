@@ -180,6 +180,50 @@ if ticker:
             st.error(f"Could not fetch company profile for {ticker}")
             st.stop()
 
+        # Add Company Overview Section
+        st.subheader("Company Overview")
+        
+        # Create two columns for the overview
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            # Company Description
+            if 'description' in profile:
+                st.markdown(f"**Description:** {profile['description']}")
+            
+            # Key Information
+            st.markdown("**Key Information:**")
+            key_info = {
+                'Industry': profile.get('industry', 'N/A'),
+                'Sector': profile.get('sector', 'N/A'),
+                'CEO': profile.get('ceo', 'N/A'),
+                'Website': profile.get('website', 'N/A'),
+                'Exchange': profile.get('exchange', 'N/A'),
+                'Country': profile.get('country', 'N/A')
+            }
+            
+            for key, value in key_info.items():
+                if value != 'N/A':
+                    st.markdown(f"- **{key}:** {value}")
+        
+        with col2:
+            # Market Data
+            st.markdown("**Market Data:**")
+            market_data = {
+                'Market Cap': format_number(profile.get('mktCap')),
+                '52 Week High': f"${profile.get('price', 0):.2f}",
+                '52 Week Low': f"${profile.get('price', 0):.2f}",
+                'Beta': f"{profile.get('beta', 0):.2f}",
+                'Dividend Yield': f"{profile.get('lastDiv', 0):.2f}%",
+                'P/E Ratio': f"{profile.get('pe', 0):.2f}"
+            }
+            
+            for key, value in market_data.items():
+                if value != 'N/A':
+                    st.markdown(f"- **{key}:** {value}")
+        
+        st.markdown("---")  # Add a separator line
+
         period_type = "quarterly" if period == "Quarterly" else "annual"
         income_data, balance_data, cash_flow_data = fetch_financial_statements(ticker, period_type)
         if not income_data or not balance_data or not cash_flow_data:
