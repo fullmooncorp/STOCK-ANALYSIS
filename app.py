@@ -572,20 +572,32 @@ if ticker:
                     
                     # Merge dividend data with price data
                     merged_df = pd.merge(dividend_df, price_df[['date', 'adjClose']], on='date', how='left')
-                    merged_df['dividendYield'] = (merged_df['dividend'] / merged_df['adjClose'] * 100)
                     
-                    # Filter for at least 10 years of data
-                    current_year = pd.Timestamp.now().year
-                    start_year = current_year - 10
-                    merged_df = merged_df[pd.to_datetime(merged_df['date']).dt.year >= start_year]
+                    # Calculate annual dividend yield
+                    # First, get the annual dividend amount
                     merged_df['year'] = pd.to_datetime(merged_df['date']).dt.year
                     
-                    # Calculate annual averages
-                    annual_data = merged_df.groupby('year').agg({
-                        'dividendYield': 'mean',
-                        'dividend': 'sum'
-                    }).reset_index()
-                    annual_data = annual_data.sort_values('year', ascending=False)  # Most recent first
+                    # Filter for last 10 years
+                    current_year = pd.Timestamp.now().year
+                    start_year = current_year - 10
+                    merged_df = merged_df[merged_df['year'] >= start_year]
+                    
+                    annual_dividends = merged_df.groupby('year')['dividend'].sum().reset_index()
+                    
+                    # Get the year-end price for each year
+                    year_end_prices = price_df.copy()
+                    year_end_prices['year'] = pd.to_datetime(year_end_prices['date']).dt.year
+                    year_end_prices = year_end_prices[year_end_prices['year'] >= start_year]
+                    year_end_prices = year_end_prices.sort_values('date').groupby('year').last()[['adjClose']].reset_index()
+                    
+                    # Merge annual dividends with year-end prices
+                    annual_data = pd.merge(annual_dividends, year_end_prices, on='year', how='left')
+                    
+                    # Calculate dividend yield using year-end price
+                    annual_data['dividendYield'] = (annual_data['dividend'] / annual_data['adjClose'] * 100)
+                    
+                    # Sort by year in descending order
+                    annual_data = annual_data.sort_values('year', ascending=False)
                     
                     # Create the combined dividend chart
                     fig_dividend = go.Figure()
@@ -597,7 +609,7 @@ if ticker:
                         name='Annual Dividend Amount',
                         text=annual_data['dividend'].apply(lambda x: f"${x:.2f}" if pd.notnull(x) else "N/A"),
                         textposition='outside',
-                        marker_color='#FFA15A',
+                        marker_color='#808080',
                         yaxis='y'
                     ))
                     
@@ -615,7 +627,7 @@ if ticker:
                     
                     # Update layout with two y-axes
                     fig_dividend.update_layout(
-                        title=f'Dividend Analysis ({start_year}-{current_year})',
+                        title=f'Dividend Analysis ({annual_data['year'].min()}-{annual_data['year'].max()})',
                         xaxis_title='Year',
                         yaxis=dict(
                             title='Annual Dividend Amount ($)',
