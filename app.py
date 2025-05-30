@@ -187,6 +187,18 @@ if ticker:
         company_name = profile.get('companyName', ticker)
         st.markdown(f"## {company_name} ({ticker})")
         
+        # Calculate current dividend yield
+        current_price = profile.get('price', 0)
+        dividend_data = fetch_dividend_data(ticker)
+        current_dividend_yield = "N/A"
+        
+        if dividend_data and current_price > 0:
+            # Get the most recent dividend
+            latest_dividend = dividend_data[0].get('dividend', 0)
+            # Calculate annual yield (assuming quarterly dividends)
+            annual_dividend = latest_dividend * 4
+            current_dividend_yield = f"{(annual_dividend / current_price * 100):.2f}%"
+        
         # Create two columns for the overview
         col1, col2 = st.columns([2, 1])
         
@@ -218,7 +230,7 @@ if ticker:
                 '52 Week High': f"${profile.get('range', '0-0').split('-')[1] if profile.get('range') else '0'}",
                 '52 Week Low': f"${profile.get('range', '0-0').split('-')[0] if profile.get('range') else '0'}",
                 'Beta': f"{profile.get('beta', 0):.2f}",
-                'Dividend Yield': f"{profile.get('lastDiv', 0):.2f}%",
+                'Dividend Yield': current_dividend_yield,
                 'P/E Ratio': f"{profile.get('pe', 0):.2f}"
             }
             
