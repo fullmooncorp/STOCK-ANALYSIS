@@ -183,6 +183,10 @@ if ticker:
         # Add Company Overview Section
         st.subheader("Company Overview")
         
+        # Add Company Name
+        company_name = profile.get('companyName', ticker)
+        st.markdown(f"## {company_name} ({ticker})")
+        
         # Create two columns for the overview
         col1, col2 = st.columns([2, 1])
         
@@ -211,8 +215,8 @@ if ticker:
             st.markdown("**Market Data:**")
             market_data = {
                 'Market Cap': format_number(profile.get('mktCap')),
-                '52 Week High': f"${profile.get('price', 0):.2f}",
-                '52 Week Low': f"${profile.get('price', 0):.2f}",
+                '52 Week High': f"${profile.get('range', '0-0').split('-')[1] if profile.get('range') else '0'}",
+                '52 Week Low': f"${profile.get('range', '0-0').split('-')[0] if profile.get('range') else '0'}",
                 'Beta': f"{profile.get('beta', 0):.2f}",
                 'Dividend Yield': f"{profile.get('lastDiv', 0):.2f}%",
                 'P/E Ratio': f"{profile.get('pe', 0):.2f}"
