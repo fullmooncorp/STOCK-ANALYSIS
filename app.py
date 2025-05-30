@@ -157,7 +157,6 @@ def fetch_dividend_data(symbol):
     if not data or 'historical' not in data:
         st.warning(f"No dividend data found for {symbol}")
         return None
-    st.write(f"Dividend data received: {len(data['historical'])} records")
     return data['historical']
 
 def fetch_analyst_estimates(symbol):
@@ -171,7 +170,6 @@ def fetch_analyst_estimates(symbol):
     if not data:
         st.warning(f"No analyst estimates found for {symbol}")
         return None
-    st.write(f"Analyst estimates data received: {len(data)} records")
     return data
 
 if ticker:
