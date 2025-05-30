@@ -5,9 +5,36 @@ import requests
 import os
 from datetime import datetime
 from dotenv import load_dotenv
+import yfinance as yf
 
 # Load environment variables
 load_dotenv()
+
+# Set page configuration
+st.set_page_config(
+    page_title="Stock Analysis Tool",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Title and description
+st.title("📊 Stock Analysis Tool")
+st.markdown("Enter a stock ticker symbol to analyze its historical financial data.")
+
+# Search box
+ticker = st.text_input("Enter Stock Ticker Symbol (e.g., AAPL, MSFT, GOOGL):", "").upper()
+
+# Add period selection
+period = st.radio("Select Period:", ["Annual", "Quarterly"], horizontal=True)
+
+# FMP API configuration
+FMP_API_KEY = os.getenv('FMP_API_KEY')
+if not FMP_API_KEY:
+    st.error("Please set your FMP_API_KEY in the .env file")
+    st.stop()
+
+BASE_URL = "https://financialmodelingprep.com/api/v3"
 
 def format_number(value):
     """Format number to K, M, B format"""
@@ -35,49 +62,6 @@ def format_ratio(value):
     if pd.isna(value) or value is None:
         return "N/A"
     return f"{value:.2f}"
-
-# Set page configuration
-st.set_page_config(
-    page_title="Stock Analysis Tool",
-    page_icon="📈",
-    layout="wide"
-)
-
-# Custom CSS for better styling
-st.markdown("""
-    <style>
-    .main {
-        padding: 2rem;
-    }
-    .stTextInput>div>div>input {
-        font-size: 1.2rem;
-    }
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# Title and description
-st.title("📊 Stock Analysis Tool")
-st.markdown("Enter a stock ticker symbol to analyze its historical financial data.")
-
-# Input for stock ticker
-ticker = st.text_input("Enter Stock Ticker Symbol (e.g., AAPL, MSFT, GOOGL):", "").upper()
-
-# Add period selection
-period = st.radio("Select Period:", ["Annual", "Quarterly"], horizontal=True)
-
-# FMP API configuration
-FMP_API_KEY = os.getenv('FMP_API_KEY')
-if not FMP_API_KEY:
-    st.error("Please set your FMP_API_KEY in the .env file")
-    st.stop()
-
-BASE_URL = "https://financialmodelingprep.com/api/v3"
 
 def safe_get(data, key, default=None):
     """Safely get a value from a dictionary with a default if not found"""
@@ -169,6 +153,32 @@ def fetch_analyst_estimates(symbol):
     data = response.json()
     if not data:
         st.warning(f"Could not fetch analyst estimates for {symbol}")
+        return None
+    return data
+
+def fetch_insider_trading(symbol):
+    """Fetch insider trading data for the given symbol"""
+    url = f"{BASE_URL}/insider-trading/{symbol}?limit=50&apikey={FMP_API_KEY}"
+    response = requests.get(url)
+    if response.status_code != 200:
+        st.error(f"Error fetching insider trading data: {response.status_code} - {response.text}")
+        return None
+    data = response.json()
+    if not data:
+        st.warning(f"No insider trading data found for {symbol}")
+        return None
+    return data
+
+def fetch_institutional_ownership(symbol):
+    """Fetch institutional ownership data for the given symbol"""
+    url = f"{BASE_URL}/institutional-holder/{symbol}?apikey={FMP_API_KEY}"
+    response = requests.get(url)
+    if response.status_code != 200:
+        st.error(f"Error fetching institutional ownership data: {response.status_code} - {response.text}")
+        return None
+    data = response.json()
+    if not data:
+        st.warning(f"No institutional ownership data found for {symbol}")
         return None
     return data
 
@@ -605,7 +615,154 @@ if ticker:
         
         st.plotly_chart(fig_debt, use_container_width=True)
         
-        # After the Total Debt chart and before the Analyst Estimates section, add the Dividend Yield chart
+        # After the Total Debt chart and before the Dividend History section, add Cash Flow Analysis
+        st.subheader("Cash Flow Analysis")
+        
+        # Create a DataFrame for cash flow data
+        cash_flow_df = pd.DataFrame(cash_flow_data)
+        cash_flow_df['date'] = pd.to_datetime(cash_flow_df['date'])
+        cash_flow_df = cash_flow_df.sort_values('date', ascending=False)
+        
+        # Select key cash flow metrics
+        cash_flow_metrics = {
+            'Operating Cash Flow': 'operatingCashFlow',
+            'Free Cash Flow': 'freeCashFlow',
+            'Capital Expenditure': 'capitalExpenditure',
+            'Dividend Payments': 'dividendsPaid',
+            'Net Income': 'netIncome',
+            'Cash Flow from Investing': 'netCashUsedForInvestingActivites',
+            'Cash Flow from Financing': 'netCashUsedProvidedByFinancingActivities'
+        }
+        
+        # Create a DataFrame for the selected metrics
+        display_cash_flow = cash_flow_df[['date'] + list(cash_flow_metrics.values())].copy()
+        display_cash_flow.columns = ['Date'] + list(cash_flow_metrics.keys())
+        
+        # Format the values
+        for col in display_cash_flow.columns:
+            if col != 'Date':
+                display_cash_flow[col] = display_cash_flow[col].apply(lambda x: format_number(x) if pd.notnull(x) else "N/A")
+        
+        # Display the table
+        st.dataframe(display_cash_flow, use_container_width=True)
+        
+        # Create cash flow charts
+        # 1. Operating Cash Flow vs Net Income
+        fig_ocf_ni = go.Figure()
+        
+        fig_ocf_ni.add_trace(go.Bar(
+            x=cash_flow_df['date'],
+            y=cash_flow_df['operatingCashFlow'],
+            name='Operating Cash Flow',
+            marker_color='#00CC96'
+        ))
+        
+        fig_ocf_ni.add_trace(go.Bar(
+            x=cash_flow_df['date'],
+            y=cash_flow_df['netIncome'],
+            name='Net Income',
+            marker_color='#636EFA'
+        ))
+        
+        fig_ocf_ni.update_layout(
+            title='Operating Cash Flow vs Net Income',
+            xaxis_title='Date',
+            yaxis_title='Amount',
+            template='plotly_white',
+            height=500,
+            barmode='group',
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig_ocf_ni, use_container_width=True)
+        
+        # 2. Free Cash Flow and Capital Expenditure
+        fig_fcf_capex = go.Figure()
+        
+        fig_fcf_capex.add_trace(go.Bar(
+            x=cash_flow_df['date'],
+            y=cash_flow_df['freeCashFlow'],
+            name='Free Cash Flow',
+            marker_color='#00CC96'
+        ))
+        
+        fig_fcf_capex.add_trace(go.Bar(
+            x=cash_flow_df['date'],
+            y=cash_flow_df['capitalExpenditure'],
+            name='Capital Expenditure',
+            marker_color='#EF553B'
+        ))
+        
+        fig_fcf_capex.update_layout(
+            title='Free Cash Flow and Capital Expenditure',
+            xaxis_title='Date',
+            yaxis_title='Amount',
+            template='plotly_white',
+            height=500,
+            barmode='group',
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig_fcf_capex, use_container_width=True)
+        
+        # 3. Cash Flow Components
+        fig_cf_components = go.Figure()
+        
+        fig_cf_components.add_trace(go.Bar(
+            x=cash_flow_df['date'],
+            y=cash_flow_df['operatingCashFlow'],
+            name='Operating',
+            marker_color='#00CC96'
+        ))
+        
+        fig_cf_components.add_trace(go.Bar(
+            x=cash_flow_df['date'],
+            y=cash_flow_df['netCashUsedForInvestingActivites'],
+            name='Investing',
+            marker_color='#636EFA'
+        ))
+        
+        fig_cf_components.add_trace(go.Bar(
+            x=cash_flow_df['date'],
+            y=cash_flow_df['netCashUsedProvidedByFinancingActivities'],
+            name='Financing',
+            marker_color='#EF553B'
+        ))
+        
+        fig_cf_components.update_layout(
+            title='Cash Flow Components',
+            xaxis_title='Date',
+            yaxis_title='Amount',
+            template='plotly_white',
+            height=500,
+            barmode='group',
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig_cf_components, use_container_width=True)
+        
+        # 4. Dividend Payments
+        fig_dividends = go.Figure()
+        
+        fig_dividends.add_trace(go.Bar(
+            x=cash_flow_df['date'],
+            y=cash_flow_df['dividendsPaid'].abs(),  # Convert to positive for better visualization
+            name='Dividend Payments',
+            marker_color='#9B59B6'
+        ))
+        
+        fig_dividends.update_layout(
+            title='Dividend Payments',
+            xaxis_title='Date',
+            yaxis_title='Amount',
+            template='plotly_white',
+            height=500,
+            showlegend=False
+        )
+        
+        st.plotly_chart(fig_dividends, use_container_width=True)
+        
+        # After the Cash Flow Analysis section, add the Dividend History section
         if dividend_data:
             st.subheader("Dividend History")
             
@@ -707,201 +864,235 @@ if ticker:
                     )
                     
                     st.plotly_chart(fig_dividend, use_container_width=True)
+
+        # After the Dividend History section, add Insider Trading and Institutional Ownership sections
+        # Insider Trading Section
+        st.subheader("Insider Trading")
+        insider_data = fetch_insider_trading(ticker)
         
-        # After all the existing charts, add the Analyst Estimates section
-        if analyst_estimates:
-            st.subheader("Analyst Estimates")
+        if insider_data:
+            # Create a DataFrame for insider trading
+            insider_df = pd.DataFrame(insider_data)
+            insider_df['transactionDate'] = pd.to_datetime(insider_df['transactionDate'])
+            insider_df = insider_df.sort_values('transactionDate', ascending=False)
             
-            # Create a DataFrame for analyst estimates
-            estimates_data = []
-            for estimate in analyst_estimates:
-                estimates_data.append({
-                    'Period': f"{estimate['date']}",
-                    'Revenue Est': estimate.get('estimatedRevenueAvg', None),
-                    'Revenue High': estimate.get('estimatedRevenueHigh', None),
-                    'Revenue Low': estimate.get('estimatedRevenueLow', None),
-                    'EPS Est': estimate.get('estimatedEpsAvg', None),
-                    'EPS High': estimate.get('estimatedEpsHigh', None),
-                    'EPS Low': estimate.get('estimatedEpsLow', None),
-                    'Net Income Est': estimate.get('estimatedNetIncomeAvg', None),
-                    'Net Income High': estimate.get('estimatedNetIncomeHigh', None),
-                    'Net Income Low': estimate.get('estimatedNetIncomeLow', None),
-                    'EBITDA Est': estimate.get('estimatedEbitdaAvg', None),
-                    'EBITDA High': estimate.get('estimatedEbitdaHigh', None),
-                    'EBITDA Low': estimate.get('estimatedEbitdaLow', None),
-                    'Revenue Analysts': estimate.get('numberAnalystEstimatedRevenue', None),
-                    'EPS Analysts': estimate.get('numberAnalystsEstimatedEps', None)
-                })
+            # Format the data for display
+            display_insider_df = insider_df[['transactionDate', 'transactionType', 'name', 'transactionPrice', 'sharesTransacted', 'value']].copy()
+            display_insider_df.columns = ['Date', 'Type', 'Name', 'Price', 'Shares', 'Value']
             
-            estimates_df = pd.DataFrame(estimates_data)
-            estimates_df = estimates_df.sort_values('Period', ascending=False)  # Most recent first
+            # Format the values
+            display_insider_df['Price'] = display_insider_df['Price'].apply(lambda x: f"${x:.2f}" if pd.notnull(x) else "N/A")
+            display_insider_df['Shares'] = display_insider_df['Shares'].apply(lambda x: f"{x:,.0f}" if pd.notnull(x) else "N/A")
+            display_insider_df['Value'] = display_insider_df['Value'].apply(lambda x: format_number(x) if pd.notnull(x) else "N/A")
             
-            # Create a display DataFrame for the table
-            display_estimates_df = estimates_df.copy()
+            # Display the table
+            st.dataframe(display_insider_df, use_container_width=True)
             
-            # Format the monetary columns using format_number for display
-            monetary_columns = ['Revenue Est', 'Revenue High', 'Revenue Low', 
-                              'Net Income Est', 'Net Income High', 'Net Income Low',
-                              'EBITDA Est', 'EBITDA High', 'EBITDA Low']
+            # Create a chart for insider transactions
+            fig_insider = go.Figure()
             
-            for col in monetary_columns:
-                display_estimates_df[col] = display_estimates_df[col].apply(lambda x: format_number(x) if pd.notnull(x) else "N/A")
+            # Add buy transactions
+            buys = insider_df[insider_df['transactionType'].str.contains('Buy', case=False, na=False)]
+            if not buys.empty:
+                fig_insider.add_trace(go.Bar(
+                    x=buys['transactionDate'],
+                    y=buys['sharesTransacted'],
+                    name='Buy',
+                    marker_color='#00CC96'
+                ))
             
-            # Display the estimates table
-            st.dataframe(
-                display_estimates_df,
-                use_container_width=True,
-                column_config={
-                    'Period': st.column_config.TextColumn('Period'),
-                    'Revenue Est': st.column_config.TextColumn('Revenue Est'),
-                    'Revenue High': st.column_config.TextColumn('Revenue High'),
-                    'Revenue Low': st.column_config.TextColumn('Revenue Low'),
-                    'EPS Est': st.column_config.NumberColumn('EPS Est', format="$%.2f"),
-                    'EPS High': st.column_config.NumberColumn('EPS High', format="$%.2f"),
-                    'EPS Low': st.column_config.NumberColumn('EPS Low', format="$%.2f"),
-                    'Net Income Est': st.column_config.TextColumn('Net Income Est'),
-                    'Net Income High': st.column_config.TextColumn('Net Income High'),
-                    'Net Income Low': st.column_config.TextColumn('Net Income Low'),
-                    'EBITDA Est': st.column_config.TextColumn('EBITDA Est'),
-                    'EBITDA High': st.column_config.TextColumn('EBITDA High'),
-                    'EBITDA Low': st.column_config.TextColumn('EBITDA Low'),
-                    'Revenue Analysts': st.column_config.NumberColumn('Revenue Analysts', format="%d"),
-                    'EPS Analysts': st.column_config.NumberColumn('EPS Analysts', format="%d")
-                }
-            )
+            # Add sell transactions
+            sells = insider_df[insider_df['transactionType'].str.contains('Sell', case=False, na=False)]
+            if not sells.empty:
+                fig_insider.add_trace(go.Bar(
+                    x=sells['transactionDate'],
+                    y=sells['sharesTransacted'].abs(),
+                    name='Sell',
+                    marker_color='#EF553B'
+                ))
             
-            # Create a chart for EPS estimates
-            fig_eps_est = go.Figure()
-            
-            # Add the average estimate line
-            fig_eps_est.add_trace(go.Scatter(
-                x=estimates_df['Period'],
-                y=estimates_df['EPS Est'],
-                name='Average Estimate',
-                line=dict(color='#00CC96', width=2),
-                mode='lines+markers+text',
-                text=estimates_df['EPS Est'].apply(lambda x: f"${x:.2f}" if pd.notnull(x) else "N/A"),
-                textposition='top center'
-            ))
-            
-            # Add the high and low range
-            fig_eps_est.add_trace(go.Scatter(
-                x=estimates_df['Period'],
-                y=estimates_df['EPS High'],
-                name='High Estimate',
-                line=dict(color='rgba(0,204,150,0.2)', width=0),
-                showlegend=False
-            ))
-            
-            fig_eps_est.add_trace(go.Scatter(
-                x=estimates_df['Period'],
-                y=estimates_df['EPS Low'],
-                name='Low Estimate',
-                line=dict(color='rgba(0,204,150,0.2)', width=0),
-                fill='tonexty',
-                fillcolor='rgba(0,204,150,0.1)',
-                showlegend=False
-            ))
-            
-            fig_eps_est.update_layout(
-                title='EPS Estimates Over Time',
-                xaxis_title='Period',
-                yaxis_title='EPS',
+            fig_insider.update_layout(
+                title='Insider Trading Activity',
+                xaxis_title='Date',
+                yaxis_title='Number of Shares',
                 template='plotly_white',
                 height=500,
                 showlegend=True
             )
             
-            st.plotly_chart(fig_eps_est, use_container_width=True)
-            
-            # Create a chart for Revenue estimates
-            fig_rev_est = go.Figure()
-            
-            # Add the average estimate line
-            fig_rev_est.add_trace(go.Scatter(
-                x=estimates_df['Period'],
-                y=estimates_df['Revenue Est'],
-                name='Average Estimate',
-                line=dict(color='#9B59B6', width=2),
-                mode='lines+markers+text',
-                text=estimates_df['Revenue Est'].apply(lambda x: format_number(x) if pd.notnull(x) else "N/A"),
-                textposition='top center'
-            ))
-            
-            # Add the high and low range
-            fig_rev_est.add_trace(go.Scatter(
-                x=estimates_df['Period'],
-                y=estimates_df['Revenue High'],
-                name='High Estimate',
-                line=dict(color='rgba(155,89,182,0.2)', width=0),
-                showlegend=False
-            ))
-            
-            fig_rev_est.add_trace(go.Scatter(
-                x=estimates_df['Period'],
-                y=estimates_df['Revenue Low'],
-                name='Low Estimate',
-                line=dict(color='rgba(155,89,182,0.2)', width=0),
-                fill='tonexty',
-                fillcolor='rgba(155,89,182,0.1)',
-                showlegend=False
-            ))
-            
-            fig_rev_est.update_layout(
-                title='Revenue Estimates Over Time',
-                xaxis_title='Period',
-                yaxis_title='Revenue',
-                template='plotly_white',
-                height=500,
-                showlegend=True
-            )
-            
-            st.plotly_chart(fig_rev_est, use_container_width=True)
-            
-            # Create a chart for Net Income estimates
-            fig_ni_est = go.Figure()
-            
-            # Add the average estimate line
-            fig_ni_est.add_trace(go.Scatter(
-                x=estimates_df['Period'],
-                y=estimates_df['Net Income Est'],
-                name='Average Estimate',
-                line=dict(color='#FFA15A', width=2),
-                mode='lines+markers+text',
-                text=estimates_df['Net Income Est'].apply(lambda x: format_number(x) if pd.notnull(x) else "N/A"),
-                textposition='top center'
-            ))
-            
-            # Add the high and low range
-            fig_ni_est.add_trace(go.Scatter(
-                x=estimates_df['Period'],
-                y=estimates_df['Net Income High'],
-                name='High Estimate',
-                line=dict(color='rgba(255,161,90,0.2)', width=0),
-                showlegend=False
-            ))
-            
-            fig_ni_est.add_trace(go.Scatter(
-                x=estimates_df['Period'],
-                y=estimates_df['Net Income Low'],
-                name='Low Estimate',
-                line=dict(color='rgba(255,161,90,0.2)', width=0),
-                fill='tonexty',
-                fillcolor='rgba(255,161,90,0.1)',
-                showlegend=False
-            ))
-            
-            fig_ni_est.update_layout(
-                title='Net Income Estimates Over Time',
-                xaxis_title='Period',
-                yaxis_title='Net Income',
-                template='plotly_white',
-                height=500,
-                showlegend=True
-            )
-            
-            st.plotly_chart(fig_ni_est, use_container_width=True)
+            st.plotly_chart(fig_insider, use_container_width=True)
         
+        # Institutional Ownership Section
+        st.subheader("Institutional Ownership")
+        inst_data = fetch_institutional_ownership(ticker)
+        
+        if inst_data:
+            # Create a DataFrame for institutional ownership
+            inst_df = pd.DataFrame(inst_data)
+            
+            # Format the data for display
+            display_inst_df = inst_df[['holder', 'shares', 'dateReported', 'change']].copy()
+            display_inst_df.columns = ['Institution', 'Shares Held', 'Date Reported', 'Change']
+            
+            # Format the values
+            display_inst_df['Shares Held'] = display_inst_df['Shares Held'].apply(lambda x: f"{x:,.0f}" if pd.notnull(x) else "N/A")
+            display_inst_df['Change'] = display_inst_df['Change'].apply(lambda x: f"{x:,.0f}" if pd.notnull(x) else "N/A")
+            display_inst_df['Date Reported'] = pd.to_datetime(display_inst_df['Date Reported']).dt.strftime('%Y-%m-%d')
+            
+            # Sort by shares held
+            display_inst_df = display_inst_df.sort_values('Shares Held', ascending=False)
+            
+            # Display the table
+            st.dataframe(display_inst_df, use_container_width=True)
+            
+            # Create a bar chart for top 10 institutional holders
+            top_10 = inst_df.head(10)
+            fig_inst = go.Figure(data=[go.Bar(
+                x=top_10['holder'],
+                y=top_10['shares'],
+                text=top_10['shares'].apply(lambda x: f"{x:,.0f}"),
+                textposition='outside',
+                marker_color='#636EFA'
+            )])
+            
+            fig_inst.update_layout(
+                title='Top 10 Institutional Holders',
+                xaxis_title='Institution',
+                yaxis_title='Shares Held',
+                template='plotly_white',
+                height=700,
+                showlegend=False,
+                xaxis_tickangle=-45,
+                margin=dict(t=100, b=100),
+                yaxis=dict(
+                    tickformat=",.0f",
+                    gridcolor='lightgray'
+                )
+            )
+            
+            st.plotly_chart(fig_inst, use_container_width=True)
+        
+        # Add AI Analysis Section at the end
+        st.subheader("🤖 AI Analysis Summary")
+        
+        # Create a summary of key metrics
+        summary_points = []
+        
+        # Company Overview Summary
+        if profile:
+            summary_points.append(f"**Company Overview:** {company_name} is a {profile.get('industry', 'N/A')} company in the {profile.get('sector', 'N/A')} sector with a market cap of {format_number(profile.get('mktCap'))}.")
+        
+        # Financial Performance Summary with Historical Trends
+        if not df.empty:
+            latest_rev = df['Revenue'].iloc[0]
+            latest_rev_growth = df['Rev Growth'].iloc[0]
+            latest_ni = df['Net Income'].iloc[0]
+            latest_ni_growth = df['NI Growth'].iloc[0]
+            
+            # Calculate 3-year average growth rates
+            if len(df) >= 3:
+                avg_rev_growth = df['Rev Growth'].head(3).mean()
+                avg_ni_growth = df['NI Growth'].head(3).mean()
+                summary_points.append(f"**Financial Performance:** The company reported revenue of {format_number(latest_rev)} with a growth rate of {format_percentage(latest_rev_growth)}. Net income was {format_number(latest_ni)} with a growth rate of {format_percentage(latest_ni_growth)}. Over the past 3 years, revenue has grown at an average rate of {format_percentage(avg_rev_growth)} and net income at {format_percentage(avg_ni_growth)}.")
+            else:
+                summary_points.append(f"**Financial Performance:** The company reported revenue of {format_number(latest_rev)} with a growth rate of {format_percentage(latest_rev_growth)}. Net income was {format_number(latest_ni)} with a growth rate of {format_percentage(latest_ni_growth)}.")
+            
+            # Analyze profitability trends
+            if 'ROE' in df.columns:
+                latest_roe = df['ROE'].iloc[0]
+                avg_roe = df['ROE'].head(3).mean()
+                summary_points.append(f"**Profitability:** The company's Return on Equity (ROE) is {format_percentage(latest_roe)}, with a 3-year average of {format_percentage(avg_roe)}.")
+        
+        # Cash Flow Analysis with Trends
+        if not cash_flow_df.empty:
+            latest_ocf = cash_flow_df['operatingCashFlow'].iloc[0]
+            latest_fcf = cash_flow_df['freeCashFlow'].iloc[0]
+            
+            # Calculate cash flow trends
+            if len(cash_flow_df) >= 3:
+                avg_ocf = cash_flow_df['operatingCashFlow'].head(3).mean()
+                avg_fcf = cash_flow_df['freeCashFlow'].head(3).mean()
+                ocf_trend = "increasing" if latest_ocf > avg_ocf else "decreasing"
+                fcf_trend = "increasing" if latest_fcf > avg_fcf else "decreasing"
+                
+                summary_points.append(f"**Cash Flow:** Operating cash flow was {format_number(latest_ocf)} with free cash flow of {format_number(latest_fcf)}. Both metrics show a {ocf_trend} trend compared to their 3-year averages of {format_number(avg_ocf)} and {format_number(avg_fcf)} respectively.")
+            else:
+                summary_points.append(f"**Cash Flow:** Operating cash flow was {format_number(latest_ocf)} with free cash flow of {format_number(latest_fcf)}.")
+            
+            # Analyze cash flow quality
+            if 'netIncome' in cash_flow_df.columns:
+                latest_ni = cash_flow_df['netIncome'].iloc[0]
+                ocf_to_ni = latest_ocf / latest_ni if latest_ni != 0 else 0
+                summary_points.append(f"**Cash Flow Quality:** The company's operating cash flow to net income ratio is {format_ratio(ocf_to_ni)}, indicating {'strong' if ocf_to_ni > 1 else 'weak'} cash flow quality.")
+        
+        # Dividend Analysis with Historical Context
+        if dividend_data:
+            latest_dividend = dividend_data[0].get('dividend', 0)
+            
+            # Calculate dividend growth rate
+            if len(dividend_data) >= 4:  # At least 4 quarters
+                prev_year_dividend = sum(d['dividend'] for d in dividend_data[4:8])
+                current_year_dividend = sum(d['dividend'] for d in dividend_data[0:4])
+                div_growth = ((current_year_dividend - prev_year_dividend) / prev_year_dividend * 100) if prev_year_dividend != 0 else 0
+                
+                summary_points.append(f"**Dividend:** The company pays a quarterly dividend of ${latest_dividend:.2f} per share, resulting in a current yield of {current_dividend_yield}. The annual dividend has {'increased' if div_growth > 0 else 'decreased'} by {format_percentage(div_growth)} compared to the previous year.")
+            else:
+                summary_points.append(f"**Dividend:** The company pays a quarterly dividend of ${latest_dividend:.2f} per share, resulting in a current yield of {current_dividend_yield}.")
+        
+        # Insider Trading Analysis with Context
+        if insider_data:
+            recent_buys = sum(1 for x in insider_data if 'Buy' in x.get('transactionType', ''))
+            recent_sells = sum(1 for x in insider_data if 'Sell' in x.get('transactionType', ''))
+            
+            # Calculate total value of insider transactions
+            buy_value = sum(float(x.get('value', 0)) for x in insider_data if 'Buy' in x.get('transactionType', ''))
+            sell_value = sum(float(x.get('value', 0)) for x in insider_data if 'Sell' in x.get('transactionType', ''))
+            
+            summary_points.append(f"**Insider Activity:** In recent transactions, there were {recent_buys} insider buys (${format_number(buy_value)}) and {recent_sells} insider sells (${format_number(sell_value)}). This suggests {'positive' if buy_value > sell_value else 'negative'} insider sentiment.")
+        
+        # Institutional Ownership Analysis with Trends
+        if inst_data:
+            top_holder = inst_data[0].get('holder', 'N/A')
+            top_shares = inst_data[0].get('shares', 0)
+            
+            # Calculate total institutional ownership
+            total_inst_shares = sum(float(x.get('shares', 0)) for x in inst_data)
+            total_shares = float(profile.get('sharesOutstanding', 0)) if profile else 0
+            inst_ownership_pct = (total_inst_shares / total_shares * 100) if total_shares > 0 else 0
+            
+            summary_points.append(f"**Institutional Ownership:** The largest institutional holder is {top_holder} with {format_number(top_shares)} shares. Institutional investors own approximately {format_percentage(inst_ownership_pct)} of the company's shares.")
+        
+        # Valuation Analysis with Historical Context
+        if not df.empty:
+            latest_pe = df['P/E'].iloc[0]
+            latest_ps = df['P/S'].iloc[0]
+            latest_pb = df['P/B'].iloc[0]
+            
+            # Calculate historical averages
+            if len(df) >= 3:
+                avg_pe = df['P/E'].head(3).mean()
+                avg_ps = df['P/S'].head(3).mean()
+                avg_pb = df['P/B'].head(3).mean()
+                
+                pe_status = "overvalued" if latest_pe > avg_pe else "undervalued"
+                ps_status = "overvalued" if latest_ps > avg_ps else "undervalued"
+                pb_status = "overvalued" if latest_pb > avg_pb else "undervalued"
+                
+                summary_points.append(f"**Valuation:** The company trades at a P/E ratio of {format_ratio(latest_pe)} (vs. 3-year avg of {format_ratio(avg_pe)}), P/S ratio of {format_ratio(latest_ps)} (vs. {format_ratio(avg_ps)}), and P/B ratio of {format_ratio(latest_pb)} (vs. {format_ratio(avg_pb)}). Based on historical averages, the stock appears {pe_status} on a P/E basis, {ps_status} on a P/S basis, and {pb_status} on a P/B basis.")
+            else:
+                summary_points.append(f"**Valuation:** The company trades at a P/E ratio of {format_ratio(latest_pe)}, P/S ratio of {format_ratio(latest_ps)}, and P/B ratio of {format_ratio(latest_pb)}.")
+        
+        # Display the summary
+        for point in summary_points:
+            st.markdown(point)
+        
+        # Add a disclaimer
+        st.markdown("""
+        ---
+        *This analysis is generated automatically based on the available data and should not be considered as financial advice. 
+        Always do your own research before making investment decisions.*
+        """)
+
     except Exception as e:
         st.error(f"Error fetching data for {ticker}. Please check if the ticker symbol is correct.")
         st.error(f"Detailed error: {str(e)}") 
