@@ -168,7 +168,7 @@ def fetch_analyst_estimates(symbol):
         return None
     data = response.json()
     if not data:
-        st.warning(f"No analyst estimates found for {symbol}")
+        st.warning(f"Could not fetch analyst estimates for {symbol}")
         return None
     return data
 
@@ -194,15 +194,11 @@ if ticker:
         analyst_estimates = fetch_analyst_estimates(ticker)
         if not analyst_estimates:
             st.warning(f"Could not fetch analyst estimates for {ticker}")
-        else:
-            st.write("Analyst estimates data structure:", analyst_estimates[0].keys() if analyst_estimates else "No data")
 
         # Fetch dividend data
         dividend_data = fetch_dividend_data(ticker)
         if not dividend_data:
             st.warning(f"Could not fetch dividend data for {ticker}")
-        else:
-            st.write("Dividend data structure:", dividend_data[0].keys() if dividend_data else "No data")
 
         # Create a DataFrame for our analysis
         data = []
