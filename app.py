@@ -5,7 +5,6 @@ import requests
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-import yfinance as yf
 
 # Load environment variables
 load_dotenv()
